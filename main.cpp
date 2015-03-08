@@ -62,7 +62,9 @@ Uint32 checkEmit(Uint32 interval, void *param) {
         e.user.data1 = NULL;
         e.user.data2 = NULL;
         SDL_PushEvent(&e);
+#ifdef DEBUG
         printf("Time is: %d : %d\n", time_i->tm_hour, time_i->tm_min);
+#endif
         past_m = time_i->tm_min;
     }
 
@@ -96,7 +98,9 @@ int initResources() {
         screen = SDL_SetVideoMode(0,0,32, SDL_FULLSCREEN);
         screenHeight = screen->h;
         screenWidth = screen->w;
+#ifdef DEBUG
         printf("Full Screen Resolution : %dx%d\n", screenWidth, screenHeight);
+#endif
         if (fullscreen) {
             customHeight = screenHeight;
             customWidth = screenWidth;
@@ -131,13 +135,17 @@ int initResources() {
     hourBackground.x = 0.5 * (customWidth - ((0.031)*customWidth) - (1.2 * customHeight));
     hourBackground.w = customHeight * 0.6;
     hourBackground.h = hourBackground.w;
+#ifdef DEBUG
     printf(" Hour x coordinate %d\n Hour y coordinate %d\n", hourBackground.y, hourBackground.x);
+#endif
     spacing = 0.031 * customWidth;
     minBackground.x = hourBackground.x + (0.6*customHeight) + spacing;
     minBackground.y = hourBackground.y;
     minBackground.h = hourBackground.h;
     minBackground.w = hourBackground.w;
+#ifdef DEBUG
     printf (" Minute x coordinate %d\n Minute y coordinate %d\n", minBackground.x, minBackground.y);
+#endif
     SDL_AddTimer(500, checkEmit, NULL);
     return 0;
 }
@@ -169,7 +177,9 @@ void fill_circle(SDL_Surface *surface, int cx, int cy, int radius, Uint32 pixel)
 void drawRoundedBackground(SDL_Surface * surface, SDL_Rect * coordinates) {
     int backgroundSize = customHeight * 0.6;
     int radius = 10;
+#ifdef DEBUG
     printf("Background size %d\n", backgroundSize);
+#endif
     for (int i=0; i<backgroundSize-radius; i++) {
         for (int j=0; j<backgroundSize-radius; j++) {
             fill_circle(surface, coordinates->x + j, coordinates->y + i, radius, COLOR_BACKGROUND);
@@ -183,8 +193,10 @@ SDL_Rect getCoordinates(SDL_Rect * background, SDL_Surface * foreground) {
     cord.x = background->x + dx;
     int dy = (background->h - foreground->h)  * 0.5;
     cord.y = background->y + dy;
+#ifdef DEBUG
     printf("dx = %d : dy = %d\n", dx, dy);
     printf("Text Coordinates x %d : y %d\n", cord.x, cord.y);
+#endif
     return cord;
 }
 
@@ -192,7 +204,9 @@ void drawAMPM(SDL_Surface * surface, tm * _time) {
     SDL_Rect cords;
     cords.x = (hourBackground.h * 0.024) + hourBackground.x;
     cords.y = (hourBackground.h * 0.071) + hourBackground.y;
+#ifdef DEBUG
     printf("AM/PM position\n\tx %d\n\ty %d\n", cords.x, cords.y);
+#endif
     char mode[3];
     strftime(mode, 3, "%p", _time);
     SDL_Surface *AMPM = TTF_RenderText_Blended(FONT_MODE, (const char *)mode, FONT_COLOR_WHITE);
@@ -210,7 +224,9 @@ void drawTime(SDL_Surface *surface, tm * _time) {
         char minutes[3];
         strftime(minutes, 3, "%M", _time);
         int h = atoi(hour);
+#ifdef DEBUG
         printf("Current time is %s : %s\n stripped hour ? %d\n", hour, minutes,h);
+#endif
         SDL_Rect coordinates;
         char buff[2];
         sprintf(buff, "%d", h);
@@ -273,19 +289,29 @@ int main (int argc, char** argv ) {
             char * value;
             value = strtok(resolution,"x");
             int i = atoi(value);
+#ifdef DEBUG
             printf("Value : %d\n", i );
+#endif
             value = strtok(NULL, "x");
             i = atoi(value);
+#ifdef DEBUG
             printf("Value : %d\n", i );
+#endif
         } else if (strcmp("-w", argv[i]) == 0) {
             customWidth = atoi(argv[i+1]);
+#ifdef DEBUG
             printf ("Width : %d\n", customWidth);
+#endif
         } else if (strcmp("-h", argv[i]) == 0) {
             customHeight = atoi(argv[i+1]);
+#ifdef DEBUG
             printf ("Height: %d\n", customHeight);
+#endif
         } else if (strcmp("-f", argv[i]) == 0 || strcmp("--font", argv[i]) == 0) {
             FONT_CUSTOM_FILE = argv[i+1];
+#ifdef DEBUG
             printf("Custom font:%s", FONT_CUSTOM_FILE);
+#endif
         } else {
             printf("Invalid option -- %s\n", argv[i]);
             printf("Try --help for more information.\n");
@@ -355,6 +381,8 @@ int main (int argc, char** argv ) {
     SDL_FreeSurface(screen);
     TTF_CloseFont(FONT_TIME);
     TTF_CloseFont(FONT_MODE);
+#ifdef DEBUG
     printf("Exited cleanly\n");
+#endif
     return 0;
 }
