@@ -174,17 +174,6 @@ SDL_Rect getCoordinates(SDL_Rect * background, SDL_Surface * foreground) {
     return cord;
 }
 
-void drawDivider(SDL_Surface * surface) {
-    SDL_Rect line;
-    line.h = customHeight * 0.0051;
-    line.w = customWidth;
-    line.x = 0;
-    line.y = (customHeight * 0.5) - line.h;
-    printf("Divider properties\n\tHeight %d\n\tWidth %d\n\tCoordinate x %d\n\tCoordinate y %d\n", line.h, line.w, line.x, line.y);
-    SDL_FillRect(surface, &line, SDL_MapRGBA(surface->format, 0,0,0,0));
-    SDL_Flip(surface);
-}
-
 void drawAMPM(SDL_Surface * surface, tm * _time) {
     SDL_Rect cords;
     cords.x = (hourBackground.h * 0.024) + hourBackground.x;
@@ -338,7 +327,6 @@ int main (int argc, char** argv ) {
                 drawTime(screen, _time);
                 if (!twentyfourh)
                     drawAMPM(screen, _time);
-                drawDivider(screen);
                 break;
             case SDL_KEYDOWN:
                 if (event.key.keysym.sym == SDLK_ESCAPE)
