@@ -61,6 +61,15 @@ Uint32 checkEmit(Uint32 interval, void *param) {
         printf("Time is: %d : %d\n", time_i->tm_hour, time_i->tm_min);
         past_m = time_i->tm_min;
     }
+
+    // Don't wake up until the next minute.
+    Uint32 seconds_to_next_minute = 60 - time_i->tm_sec;
+    interval = seconds_to_next_minute*1000;
+    // Make sure interval is positive.
+    // Should only matter for leap seconds.
+    if ( interval <= 0 ) {
+        interval = 500;
+    }
     return (interval);
 }
 int initSDL() {
@@ -316,10 +325,10 @@ int main (int argc, char** argv ) {
     bool done = false;
     while (!done) {
         SDL_Event event;
-	SDL_Delay(300);
-        while (SDL_PollEvent(&event)) {
+        SDL_WaitEvent(&event); {
             switch (event.type) {
             case SDL_USEREVENT:
+                SDL_FillRect(screen, 0, SDL_MapRGB(screen->format, 0, 0, 0));
                 time_t rawTime;
                 struct tm * _time;
                 time(&rawTime);
@@ -340,7 +349,6 @@ int main (int argc, char** argv ) {
                 break;
             }
         }
-        SDL_FillRect(screen, 0, SDL_MapRGB(screen->format, 0, 0, 0));
     }
     SDL_FreeSurface(screen);
     TTF_CloseFont(FONT_TIME);
