@@ -238,9 +238,7 @@ void drawTime(SDL_Surface *surface, tm * _time) {
         printf("Current time is %s : %s\n stripped hour ? %d\n", hour, minutes,h);
 #endif
         SDL_Rect coordinates;
-        char buff[2];
-        sprintf(buff, "%d", h);
-        SDL_Surface *text = TTF_RenderText_Blended(FONT_TIME, buff, FONT_COLOR_WHITE);
+        SDL_Surface *text = TTF_RenderText_Blended(FONT_TIME, hour, FONT_COLOR_WHITE);
         coordinates = getCoordinates(&hourBackground, text);
         SDL_BlitSurface(text, 0, screen, &coordinates);
         text = TTF_RenderText_Blended(FONT_TIME, (const char *) minutes, FONT_COLOR_WHITE);
