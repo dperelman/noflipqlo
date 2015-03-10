@@ -10,18 +10,23 @@
 #endif
 #include "SDL_ttf.h"
 #include "SDL_syswm.h"
-#include "SDL_gfxPrimitives.h"
 #include <sys/time.h>
 #include <string.h>
 #include <string>
+#include <math.h>
 #include <X11/Xlib.h>
+#include <signal.h>
 using namespace std;
 int past_m=0;
 
 bool twentyfourh = true;
 bool fullscreen  = false;
 
-SDL_Surface *screen;
+SDL_Window *screenWindow;
+SDL_Renderer *screenRenderer;
+SDL_Surface *screenSurface;
+SDL_PixelFormat *screenFormat;
+SDL_Texture *screenTexture;
 
 
 TTF_Font *FONT_TIME = NULL;
@@ -49,11 +54,21 @@ const Uint32 COLOR_BACKGROUND_RGB = 0x0a0a0a;
 Uint32 COLOR_FONT;
 Uint32 COLOR_BACKGROUND;
 
-Uint32 checkEmit(Uint32 interval, void *param) {
+
+void checkTime(struct tm **time_i, Uint32 *ms_to_next_minute) {
     timeval tv;
-    struct tm * time_i;
     gettimeofday(&tv, NULL);
-    time_i = localtime(&tv.tv_sec);
+    *time_i = localtime(&tv.tv_sec);
+
+    Uint32 seconds_to_next_minute = 60 - (*time_i)->tm_sec;
+    *ms_to_next_minute = seconds_to_next_minute*1000 - tv.tv_usec/1000;
+}
+
+Uint32 checkEmit(Uint32 interval, void *param) {
+    struct tm * time_i;
+    Uint32 ms_to_next_minute;
+
+    checkTime(&time_i, &ms_to_next_minute);
 
     if ( time_i->tm_min != past_m) {
         SDL_Event e;
@@ -69,8 +84,7 @@ Uint32 checkEmit(Uint32 interval, void *param) {
     }
 
     // Don't wake up until the next minute.
-    Uint32 seconds_to_next_minute = 60 - time_i->tm_sec;
-    interval = seconds_to_next_minute*1000 - tv.tv_usec/1000;
+    interval = ms_to_next_minute;
     // Make sure interval is positive.
     // Should only matter for leap seconds.
     if ( interval <= 0 ) {
@@ -93,11 +107,64 @@ Uint32 mapRGB24(const SDL_PixelFormat* format, Uint32 rgb) {
                       rgb & 0xff);
 }
 
-int initResources() {
+// From http://comments.gmane.org/gmane.comp.lib.sdl/67323
+struct SDL_Window
+{
+        const void *magic;
+        Uint32 id;
+        char *title;
+        SDL_Surface *icon;
+        int x, y;
+        int w, h;
+        int min_w, min_h;
+        int max_w, max_h;
+        Uint32 flags;
+};
+typedef struct SDL_Window SDL_Window;
+
+int initResources(bool fullscreen, int width, int height, Window wid) {
     try {
-        screen = SDL_SetVideoMode(0,0,32, SDL_FULLSCREEN);
-        screenHeight = screen->h;
-        screenWidth = screen->w;
+        if(wid != 0) {
+#ifdef DEBUG
+            printf("Before SDL_CreateWindowFrom().\n");
+#endif
+            screenWindow = SDL_CreateWindowFrom((void*)wid);
+            screenWindow->flags |= SDL_WINDOW_OPENGL;
+            SDL_GL_LoadLibrary(NULL);
+#ifdef DEBUG
+            printf("After SDL_CreateWindowFrom().\n");
+#endif
+        } else if(fullscreen) {
+            screenWindow = SDL_CreateWindow("noflipqlo",
+                              SDL_WINDOWPOS_UNDEFINED,
+                              SDL_WINDOWPOS_UNDEFINED,
+                              0, 0,
+                              SDL_WINDOW_FULLSCREEN_DESKTOP);
+        } else {
+            screenWindow = SDL_CreateWindow("noflipqlo",
+                              SDL_WINDOWPOS_UNDEFINED,
+                              SDL_WINDOWPOS_UNDEFINED,
+                              width, height,
+                              0);
+        }
+        SDL_GetWindowSize(screenWindow, &screenWidth, &screenHeight);
+        screenRenderer = SDL_CreateRenderer(screenWindow, -1, 0);
+        // From https://wiki.libsdl.org/MigrationGuide#If_your_game_wants_to_do_both
+        screenSurface = SDL_CreateRGBSurface(0, screenWidth, screenHeight, 32,
+                                             0x00FF0000,
+                                             0x0000FF00,
+                                             0x000000FF,
+                                             0xFF000000);
+        screenTexture = SDL_CreateTexture(screenRenderer,
+                                          SDL_PIXELFORMAT_ARGB8888,
+                                          SDL_TEXTUREACCESS_STREAMING,
+                                          screenWidth, screenHeight);
+        if (screenSurface == NULL) {
+            printf("SDL_GetWindowSurface() failed: %s\n", SDL_GetError());
+            throw 3;
+        }
+        //screenFormat = SDL_AllocFormat(SDL_GetWindowPixelFormat(screenWindow));
+        screenFormat = screenSurface->format;
 #ifdef DEBUG
         printf("Full Screen Resolution : %dx%d\n", screenWidth, screenHeight);
 #endif
@@ -113,7 +180,7 @@ int initResources() {
             FONT_TIME = TTF_OpenFont(FONT_CUSTOM_FILE, customHeight / 15);
         }
 
-        if (!screen)
+        if (!screenSurface)
             throw 2;
         if (!FONT_TIME)
             throw 1;
@@ -127,8 +194,9 @@ int initResources() {
     }
 
     // Get colors in proper format.
-    COLOR_FONT = mapRGB24(screen->format, COLOR_FONT_RGB);
-    COLOR_BACKGROUND = mapRGB24(screen->format, COLOR_BACKGROUND_RGB);
+    
+    COLOR_FONT = mapRGB24(screenFormat, COLOR_FONT_RGB);
+    COLOR_BACKGROUND = mapRGB24(screenFormat, COLOR_BACKGROUND_RGB);
 
     /* CALCULATE BACKGROUND COORDINATES */
     hourBackground.y = 0.2 * customHeight;
@@ -211,7 +279,6 @@ void drawAMPM(SDL_Surface * surface, tm * _time) {
     strftime(mode, 3, "%p", _time);
     SDL_Surface *AMPM = TTF_RenderText_Blended(FONT_MODE, (const char *)mode, FONT_COLOR_WHITE);
     SDL_BlitSurface(AMPM, 0, surface, &cords);
-    SDL_Flip(surface);
 }
 
 void drawTime(SDL_Surface *surface, tm * _time) {
@@ -228,28 +295,55 @@ void drawTime(SDL_Surface *surface, tm * _time) {
         printf("Current time is %s : %s\n stripped hour ? %d\n", hour, minutes,h);
 #endif
         SDL_Rect coordinates;
-        char buff[2];
-        sprintf(buff, "%d", h);
-        SDL_Surface *text = TTF_RenderText_Blended(FONT_TIME, buff, FONT_COLOR_WHITE);
+        SDL_Surface *text = TTF_RenderText_Blended(FONT_TIME, hour, FONT_COLOR_WHITE);
         coordinates = getCoordinates(&hourBackground, text);
-        SDL_BlitSurface(text, 0, screen, &coordinates);
+        SDL_BlitSurface(text, 0, screenSurface, &coordinates);
         text = TTF_RenderText_Blended(FONT_TIME, (const char *) minutes, FONT_COLOR_WHITE);
         coordinates = getCoordinates(&minBackground, text);
-        SDL_BlitSurface(text, 0, screen, &coordinates);
-        SDL_Flip(surface);
+        SDL_BlitSurface(text, 0, screenSurface, &coordinates);
     } catch (...) {
         printf ("Problem drawing time");
     }
 }
 
+void drawAll() {
+    SDL_FillRect(screenSurface, 0, SDL_MapRGB(screenFormat, 0, 0, 0));
+    time_t rawTime;
+    struct tm * _time;
+    time(&rawTime);
+    _time = localtime(&rawTime);
+    drawRoundedBackground(screenSurface, &hourBackground);
+    drawRoundedBackground(screenSurface, &minBackground);
+    drawTime(screenSurface, _time);
+    if (!twentyfourh)
+        drawAMPM(screenSurface, _time);
+
+    SDL_UpdateTexture(screenTexture, NULL, screenSurface->pixels, screenSurface->pitch);
+    SDL_RenderClear(screenRenderer);
+    SDL_RenderCopy(screenRenderer, screenTexture, NULL, NULL);
+    SDL_RenderPresent(screenRenderer);
+}
+
+/*int QuitEventFilter(const SDL_Event* event) {
+    return 1;
+}*/
+
+void exitImmediately(int sig) {
+    // abort() instead of exit() because in the middle of an SDL_Delay
+    abort();
+}
+
 int main (int argc, char** argv ) {
+    signal(SIGINT, exitImmediately);
+    signal(SIGTERM, exitImmediately);
+
     char *wid_env;
     static char sdlwid[100];
     Uint32 wid = 0;
     Display *display;
     XWindowAttributes windowAttributes;
     windowAttributes.height = 0;
-    windowAttributes.width =0;
+    windowAttributes.width = 0;
 
     /* If no window argument, check environment */
     if (wid == 0) {
@@ -330,43 +424,25 @@ int main (int argc, char** argv ) {
 
     initSDL();
     TTF_Init();
-    initResources();
+    int err = initResources(fullscreen, width, height, (Window)wid);
+    if(err != 0) {
+        return err;
+    }
     SDL_ShowCursor(SDL_DISABLE);
 
     atexit(SDL_Quit);
     atexit(TTF_Quit);
 
-    try {
-        if(fullscreen) {
-            screen = SDL_SetVideoMode(windowAttributes.width, windowAttributes.height,32,SDL_HWSURFACE|SDL_DOUBLEBUF|SDL_FULLSCREEN);
-        } else {
-            screen = SDL_SetVideoMode(width, height, 32,SDL_HWSURFACE|SDL_DOUBLEBUF);
-        }
-        if (!screen) {
-            throw 2;
-        }
-    } catch (int param) {
-        if (param == 2)
-            printf("Unable to set video mode: %s\n", SDL_GetError());
-        return 2;
-    }
 
+    drawAll();
     bool done = false;
     while (!done) {
         SDL_Event event;
-        SDL_WaitEvent(&event); {
+        
+        while(SDL_PollEvent(&event)) {
             switch (event.type) {
             case SDL_USEREVENT:
-                SDL_FillRect(screen, 0, SDL_MapRGB(screen->format, 0, 0, 0));
-                time_t rawTime;
-                struct tm * _time;
-                time(&rawTime);
-                _time = localtime(&rawTime);
-                drawRoundedBackground(screen, &hourBackground);
-                drawRoundedBackground(screen, &minBackground);
-                drawTime(screen, _time);
-                if (!twentyfourh)
-                    drawAMPM(screen, _time);
+                drawAll();
                 break;
             case SDL_KEYDOWN:
                 if (event.key.keysym.sym == SDLK_ESCAPE)
@@ -377,8 +453,20 @@ int main (int argc, char** argv ) {
                 break;
             }
         }
+        
+        struct tm * time_i;
+        Uint32 ms_to_next_minute;
+
+        checkTime(&time_i, &ms_to_next_minute);
+        if(ms_to_next_minute > 100) {
+            // Wait a bit less to make sure event fires at the right time.
+            SDL_Delay(ms_to_next_minute - 100);
+        } else {
+            SDL_Delay(30);
+        }
     }
-    SDL_FreeSurface(screen);
+    SDL_FreeFormat(screenFormat);
+    SDL_FreeSurface(screenSurface);
     TTF_CloseFont(FONT_TIME);
     TTF_CloseFont(FONT_MODE);
 #ifdef DEBUG
