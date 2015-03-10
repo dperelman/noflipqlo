@@ -325,7 +325,9 @@ void drawAll() {
 }
 
 void exitImmediately(int sig) {
-    exit(0);
+    // Can't use exit() because atexit calls SDL_Quit()
+    //  which hangs trying to free the window.
+    abort();
 }
 
 int main (int argc, char** argv ) {
