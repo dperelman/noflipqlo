@@ -329,8 +329,7 @@ void drawAll() {
 }*/
 
 void exitImmediately(int sig) {
-    // abort() instead of exit() because in the middle of an SDL_Delay
-    abort();
+    exit(0);
 }
 
 int main (int argc, char** argv ) {
