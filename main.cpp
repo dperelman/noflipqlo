@@ -324,10 +324,6 @@ void drawAll() {
     SDL_RenderPresent(screenRenderer);
 }
 
-/*int QuitEventFilter(const SDL_Event* event) {
-    return 1;
-}*/
-
 void exitImmediately(int sig) {
     exit(0);
 }
