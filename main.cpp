@@ -10,6 +10,7 @@
 #endif
 #include "SDL_ttf.h"
 #include "SDL_syswm.h"
+#include "SDL2_gfxPrimitives.h"
 #include <sys/time.h>
 #include <string.h>
 #include <string>
@@ -60,7 +61,7 @@ void checkTime(struct tm **time_i, Uint32 *ms_to_next_minute) {
     gettimeofday(&tv, NULL);
     *time_i = localtime(&tv.tv_sec);
 
-    Uint32 seconds_to_next_minute = 60 - (*time_i)->tm_sec;
+    Uint32 seconds_to_next_minute = 1; //60 - (*time_i)->tm_sec;
     *ms_to_next_minute = seconds_to_next_minute*1000 - tv.tv_usec/1000;
 }
 
@@ -70,7 +71,7 @@ Uint32 checkEmit(Uint32 interval, void *param) {
 
     checkTime(&time_i, &ms_to_next_minute);
 
-    if ( time_i->tm_min != past_m) {
+    if (time_i->tm_min != past_m) {
         SDL_Event e;
         e.type = SDL_USEREVENT;
         e.user.code = 0;
@@ -218,41 +219,16 @@ int initResources(bool fullscreen, int width, int height, Window wid) {
     return 0;
 }
 
-void set_pixel(SDL_Surface *surface, int x, int y, Uint32 pixel) {
-    Uint8 *target_pixel = (Uint8 *)surface->pixels + y * surface->pitch + x * 4;
-    *(Uint32 *)target_pixel = pixel;
-
-}
-
-void fill_circle(SDL_Surface *surface, int cx, int cy, int radius, Uint32 pixel) {
-    static const int BPP = 4;
-    double r = (double)radius;
-    for (double dy = 1; dy <= r; dy += 1.0) {
-        double dx = floor(sqrt((2.0 * r * dy) - (dy * dy)));
-        int x = cx - dx;
-        Uint8 *target_pixel_a = (Uint8 *)surface->pixels + ((int)(cy + r - dy)) * surface->pitch + x * BPP;
-        Uint8 *target_pixel_b = (Uint8 *)surface->pixels + ((int)(cy - r + dy)) * surface->pitch + x * BPP;
-
-        for (; x <= cx + dx; x++) {
-            *(Uint32 *)target_pixel_a = pixel;
-            *(Uint32 *)target_pixel_b = pixel;
-            target_pixel_a += BPP;
-            target_pixel_b += BPP;
-        }
-    }
-}
-
-void drawRoundedBackground(SDL_Surface * surface, SDL_Rect * coordinates) {
+void drawRoundedBackground(SDL_Renderer * renderer, SDL_Rect * coordinates) {
     int backgroundSize = customHeight * 0.6;
-    int radius = 10;
+    int radius = backgroundSize / 6;
 #ifdef DEBUG
     printf("Background size %d\n", backgroundSize);
 #endif
-    for (int i=0; i<backgroundSize-radius; i++) {
-        for (int j=0; j<backgroundSize-radius; j++) {
-            fill_circle(surface, coordinates->x + j, coordinates->y + i, radius, COLOR_BACKGROUND);
-        }
-    }
+    roundedBoxColor(renderer,
+                    coordinates->x, coordinates->y,
+                    coordinates->x + backgroundSize, coordinates->y+backgroundSize,
+                    radius, COLOR_BACKGROUND);
 }
 
 SDL_Rect getCoordinates(SDL_Rect * background, SDL_Surface * foreground) {
@@ -290,8 +266,8 @@ void drawTime(SDL_Surface *surface, tm * _time) {
             strftime(hour, 3, "%I", _time);
         char minutes[3];
         strftime(minutes, 3, "%M", _time);
-        int h = atoi(hour);
 #ifdef DEBUG
+        int h = atoi(hour);
         printf("Current time is %s : %s\n stripped hour ? %d\n", hour, minutes,h);
 #endif
         SDL_Rect coordinates;
@@ -307,19 +283,24 @@ void drawTime(SDL_Surface *surface, tm * _time) {
 }
 
 void drawAll() {
+#ifdef DEBUG
+    printf("Starting drawAll()...\n");
+#endif
     SDL_FillRect(screenSurface, 0, SDL_MapRGB(screenFormat, 0, 0, 0));
     time_t rawTime;
     struct tm * _time;
     time(&rawTime);
     _time = localtime(&rawTime);
-    drawRoundedBackground(screenSurface, &hourBackground);
-    drawRoundedBackground(screenSurface, &minBackground);
     drawTime(screenSurface, _time);
     if (!twentyfourh)
         drawAMPM(screenSurface, _time);
 
     SDL_UpdateTexture(screenTexture, NULL, screenSurface->pixels, screenSurface->pitch);
+    SDL_SetTextureBlendMode(screenTexture, SDL_BLENDMODE_ADD);
+    SDL_SetRenderDrawColor(screenRenderer, 0, 0, 0, 255);
     SDL_RenderClear(screenRenderer);
+    drawRoundedBackground(screenRenderer, &hourBackground);
+    drawRoundedBackground(screenRenderer, &minBackground);
     SDL_RenderCopy(screenRenderer, screenTexture, NULL, NULL);
     SDL_RenderPresent(screenRenderer);
 }
@@ -365,8 +346,8 @@ int main (int argc, char** argv ) {
             printf(" --help\t\t\t\tDisplay this\n");
             printf(" -root,--fullscreen,--root\tFullscreen\n");
             printf(" -ampm, --ampm\t\t\tTurn off 24 h system and use 12 h system instead\n");
-            printf(" -w\t\t\t\tCustom Width\n");
-            printf(" -h\t\t\t\tCustom Height\n");
+            printf(" -W\t\t\t\tCustom Width\n");
+            printf(" -H\t\t\t\tCustom Height\n");
             printf(" -r, --resolution\t\tCustom resolution in a format [Width]x[Height]\n");
             printf(" -f, --font\t\t\tPath to custom file font. Has to be Truetype font.");
             return 0;
@@ -376,25 +357,25 @@ int main (int argc, char** argv ) {
             twentyfourh=false;
         } else if (strcmp("-r", argv[i]) == 0 || strcmp("--resolution", argv[i]) == 0) {
             char* resolution;
-            resolution = argv[i+1];
+            resolution = argv[++i];
             char * value;
             value = strtok(resolution,"x");
-            int i = atoi(value);
+            customWidth = atoi(value);
 #ifdef DEBUG
-            printf("Value : %d\n", i );
+            printf("Width : %d\n", customWidth );
 #endif
             value = strtok(NULL, "x");
-            i = atoi(value);
+            customHeight = atoi(value);
 #ifdef DEBUG
-            printf("Value : %d\n", i );
+            printf("Height : %d\n", customHeight );
 #endif
-        } else if (strcmp("-w", argv[i]) == 0) {
-            customWidth = atoi(argv[i+1]);
+        } else if (strcmp("-W", argv[i]) == 0) {
+            customWidth = atoi(argv[++i]);
 #ifdef DEBUG
             printf ("Width : %d\n", customWidth);
 #endif
-        } else if (strcmp("-h", argv[i]) == 0) {
-            customHeight = atoi(argv[i+1]);
+        } else if (strcmp("-H", argv[i]) == 0) {
+            customHeight = atoi(argv[++i]);
 #ifdef DEBUG
             printf ("Height: %d\n", customHeight);
 #endif
